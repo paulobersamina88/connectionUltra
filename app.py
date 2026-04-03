@@ -7,11 +7,13 @@ import streamlit as st
 
 st.set_page_config(page_title="Steel Connection Studio", layout="wide")
 
+
 def round_sig(x, n=4):
     try:
         return round(float(x), n)
     except Exception:
         return x
+
 
 def first_existing(df, candidates):
     colmap = {str(c).strip().lower(): c for c in df.columns}
@@ -21,7 +23,9 @@ def first_existing(df, candidates):
             return colmap[key]
     return None
 
+
 def infer_shapes_columns(df):
+    # Avoid overlapping mappings that can create duplicate-column rename issues
     return {
         "shape": first_existing(df, ["AISC_Manual_Label", "Shape", "EDI_Std_Nomenclature", "Section", "Name"]),
         "type": first_existing(df, ["Type", "ShapeType", "shape type"]),
@@ -40,11 +44,14 @@ def infer_shapes_columns(df):
         "h": first_existing(df, ["H", "h"]),
     }
 
+
 def normalize_shapes_df(df):
     mapping = infer_shapes_columns(df)
     if mapping["shape"] is None:
         raise ValueError("Could not identify the shape label column.")
 
+    # Build a clean dataframe column-by-column instead of renaming the whole
+    # dataframe. This avoids duplicate/ambiguous columns from the AISC workbook.
     work = pd.DataFrame()
     for target, source in mapping.items():
         if source is not None and source in df.columns:
@@ -61,8 +68,10 @@ def normalize_shapes_df(df):
     work["type"] = work["type"].astype(str)
     return work, mapping
 
+
 def load_shapes_database(uploaded_file):
     name = uploaded_file.name.lower()
+
     if name.endswith(".csv"):
         df = pd.read_csv(uploaded_file)
         work, mapping = normalize_shapes_df(df)
@@ -89,73 +98,77 @@ def load_shapes_database(uploaded_file):
     work, mapping = normalize_shapes_df(valid_df)
     return work, mapping, valid_sheet
 
+
 def default_shapes_db():
     data = [
-        ["W18X35","W",18.2,6.0,0.300,0.425,75.0,82.0,510.0,1.40,10.3,None,None,None,None],
-        ["W21X50","W",20.7,6.54,0.380,0.615,111.0,102.0,1060.0,1.58,14.7,None,None,None,None],
-        ["W24X62","W",23.7,7.09,0.430,0.590,144.0,122.0,1450.0,1.67,18.2,None,None,None,None],
-        ["W27X84","W",26.7,10.0,0.460,0.670,207.0,169.0,2260.0,2.10,24.7,None,None,None,None],
-        ["W30X99","W",29.7,10.5,0.520,0.760,269.0,210.0,3120.0,2.25,29.1,None,None,None,None],
-        ["W14X90","W",14.0,14.5,0.440,0.710,169.0,181.0,1270.0,3.38,26.5,None,None,None,None],
-        ["HSS10X10X5/8","HSS",10.0,10.0,None,None,54.0,47.0,235.0,3.05,22.3,0.625,None,10.0,10.0],
-        ["HSS12X8X1/2","HSS",12.0,8.0,None,None,52.0,46.0,276.0,2.70,18.5,0.500,None,8.0,12.0],
-        ["PIPE12STD","PIPE",12.75,None,None,None,34.0,31.0,196.0,2.75,11.9,0.406,12.75,None,None],
+        ["W18X35", "W", 18.2, 6.0, 0.300, 0.425, 75.0, 82.0, 510.0, 1.40, 10.3, None, None, None, None],
+        ["W21X50", "W", 20.7, 6.54, 0.380, 0.615, 111.0, 102.0, 1060.0, 1.58, 14.7, None, None, None, None],
+        ["W24X62", "W", 23.7, 7.09, 0.430, 0.590, 144.0, 122.0, 1450.0, 1.67, 18.2, None, None, None, None],
+        ["W27X84", "W", 26.7, 10.0, 0.460, 0.670, 207.0, 169.0, 2260.0, 2.10, 24.7, None, None, None, None],
+        ["W30X99", "W", 29.7, 10.5, 0.520, 0.760, 269.0, 210.0, 3120.0, 2.25, 29.1, None, None, None, None],
+        ["W14X90", "W", 14.0, 14.5, 0.440, 0.710, 169.0, 181.0, 1270.0, 3.38, 26.5, None, None, None, None],
+        ["HSS10X10X5/8", "HSS", 10.0, 10.0, None, None, 54.0, 47.0, 235.0, 3.05, 22.3, 0.625, None, 10.0, 10.0],
+        ["HSS12X8X1/2", "HSS", 12.0, 8.0, None, None, 52.0, 46.0, 276.0, 2.70, 18.5, 0.500, None, 8.0, 12.0],
+        ["PIPE12STD", "PIPE", 12.75, None, None, None, 34.0, 31.0, 196.0, 2.75, 11.9, 0.406, 12.75, None, None],
     ]
-    cols = ["shape","type","d","bf","tw","tf","zx","sx","ix","ry","area","t","od","b","h"]
+    cols = ["shape", "type", "d", "bf", "tw", "tf", "zx", "sx", "ix", "ry", "area", "t", "od", "b", "h"]
     return pd.DataFrame(data, columns=cols)
+
 
 def get_shape_row(df, shape):
     rows = df[df["shape"] == shape]
     return None if rows.empty else rows.iloc[0]
 
+
 def shapes_by_family(df, family):
     return df[df["type"].astype(str).str.upper().str.contains(family.upper(), na=False)].copy()
+
 
 def plastic_moment(zx, fy):
     return np.nan if pd.isna(zx) else fy * zx
 
+
 def probable_moment(zx, fy, ry):
     return np.nan if pd.isna(zx) else ry * fy * zx
+
 
 def weld_strength_per_inch(fexx, size_in):
     return 0.60 * fexx * 0.707 * size_in
 
+
 def bolt_shear_nominal(n_bolts, bolt_dia, fub, threads_excluded=True):
     ab = math.pi * bolt_dia**2 / 4.0
-    factor = 0.62 if threads_excluded else 0.48
-    return n_bolts * factor * fub * ab
+    return n_bolts * ((0.62 if threads_excluded else 0.48) * fub * ab)
+
 
 def strength_result(nominal, method, phi, omega):
-    if pd.isna(nominal):
-        return np.nan
-    return phi * nominal if method == "LRFD" else nominal / omega
+    return np.nan if pd.isna(nominal) else (phi * nominal if method == "LRFD" else nominal / omega)
+
 
 def beam_flange_compactness(row, fy):
-    bf = row.get("bf", np.nan)
-    tf = row.get("tf", np.nan)
+    bf, tf = row.get("bf", np.nan), row.get("tf", np.nan)
     if pd.isna(bf) or pd.isna(tf) or tf <= 0:
         return np.nan, np.nan, False
     lamb = bf / (2 * tf)
     lamb_p = 0.38 * math.sqrt(29000 / fy)
     return lamb, lamb_p, lamb <= lamb_p
 
+
 def panel_zone_nominal(col, fy):
-    d = col.get("d", np.nan)
-    tw = col.get("tw", np.nan)
-    if pd.isna(d) or pd.isna(tw):
-        return np.nan
-    return 0.6 * fy * d * tw
+    d, tw = col.get("d", np.nan), col.get("tw", np.nan)
+    return np.nan if pd.isna(d) or pd.isna(tw) else 0.6 * fy * d * tw
+
 
 def plate_flexural_nominal(width, thk, fy):
     return fy * width * thk**2 / 4.0
+
 
 def compute_connection(inp, beam, col):
     method = inp["method"]
     seismic = inp["design_case"] != "Non-seismic"
     Mu = inp["mu_kipft"] * 12.0
     Vu = inp["vu_kip"]
-    fyb = inp["fy_beam"]
-    fyc = inp["fy_col"]
+    fyb, fyc = inp["fy_beam"], inp["fy_col"]
     conn = inp["connection_family"]
     results = []
 
@@ -163,24 +176,13 @@ def compute_connection(inp, beam, col):
     Mpr = probable_moment(beam.get("zx", np.nan), fyb, inp["ry"])
     basis = Mpr if seismic else Mp
     basis_cap = strength_result(basis, method, 0.9, 1.67)
-    results.append({
-        "Check": "Moment basis",
-        "Demand": Mu,
-        "Available": basis_cap,
-        "Units": "kip-in",
-        "Status": "OK" if not pd.isna(basis_cap) and Mu <= basis_cap else "NG",
-        "Notes": "Mp for non-seismic, Mpr for seismic."
-    })
+    results.append({"Check": "Moment basis", "Demand": Mu, "Available": basis_cap, "Units": "kip-in",
+                    "Status": "OK" if not pd.isna(basis_cap) and Mu <= basis_cap else "NG",
+                    "Notes": "Mp for non-seismic, Mpr for seismic."})
 
-    lam, lam_p, ok_comp = beam_flange_compactness(beam, fyb)
-    results.append({
-        "Check": "Beam flange compactness",
-        "Demand": lam,
-        "Available": lam_p,
-        "Units": "-",
-        "Status": "OK" if ok_comp else "NG",
-        "Notes": "Compactness screen."
-    })
+    lam, lam_p, okc = beam_flange_compactness(beam, fyb)
+    results.append({"Check": "Beam flange compactness", "Demand": lam, "Available": lam_p, "Units": "-",
+                    "Status": "OK" if okc else "NG", "Notes": "Compactness screen."})
 
     d_beam = float(beam.get("d", 0) or 0)
     tf_beam = float(beam.get("tf", 0) or 0)
@@ -191,105 +193,55 @@ def compute_connection(inp, beam, col):
         weld_len = max(float(beam.get("bf", 0) or 0), 1e-6)
         weld_nom = 2 * weld_strength_per_inch(inp["fexx"], inp["flange_weld_size"]) * weld_len
         weld_cap = strength_result(weld_nom, method, 0.75, 2.0)
-        results.append({
-            "Check": "Flange weld strength",
-            "Demand": flange_force,
-            "Available": weld_cap,
-            "Units": "kip",
-            "Status": "OK" if flange_force <= weld_cap else "NG",
-            "Notes": "Simplified screening."
-        })
-
+        results.append({"Check": "Flange weld strength", "Demand": flange_force, "Available": weld_cap, "Units": "kip",
+                        "Status": "OK" if flange_force <= weld_cap else "NG", "Notes": "Simplified screening."})
         bolt_nom = bolt_shear_nominal(inp["web_bolt_n"], inp["bolt_dia"], inp["bolt_fu"], inp["threads_excluded"])
         bolt_cap = strength_result(bolt_nom, method, 0.75, 2.0)
-        results.append({
-            "Check": "Web bolt group shear",
-            "Demand": Vu,
-            "Available": bolt_cap,
-            "Units": "kip",
-            "Status": "OK" if Vu <= bolt_cap else "NG",
-            "Notes": "Simplified web shear check."
-        })
+        results.append({"Check": "Web bolt group shear", "Demand": Vu, "Available": bolt_cap, "Units": "kip",
+                        "Status": "OK" if Vu <= bolt_cap else "NG", "Notes": "Simplified web shear check."})
 
     if conn == "Bolted end plate":
         bolt_nom = bolt_shear_nominal(inp["ep_tension_bolts"], inp["bolt_dia"], inp["bolt_fu"], inp["threads_excluded"])
         bolt_cap = strength_result(bolt_nom, method, 0.75, 2.0)
-        results.append({
-            "Check": "End-plate tension bolt group",
-            "Demand": flange_force,
-            "Available": bolt_cap,
-            "Units": "kip",
-            "Status": "OK" if flange_force <= bolt_cap else "NG",
-            "Notes": "Proxy for tension-side bolt force."
-        })
-
+        results.append({"Check": "End-plate tension bolt group", "Demand": flange_force, "Available": bolt_cap, "Units": "kip",
+                        "Status": "OK" if flange_force <= bolt_cap else "NG", "Notes": "Proxy for tension-side bolt force."})
         ep_nom = plate_flexural_nominal(inp["ep_width"], inp["ep_thk"], fyb)
         ep_cap = strength_result(ep_nom, method, 0.9, 1.67)
-        results.append({
-            "Check": "End-plate flexure",
-            "Demand": Mu,
-            "Available": ep_cap,
-            "Units": "kip-in",
-            "Status": "OK" if Mu <= ep_cap else "NG",
-            "Notes": "Screening only."
-        })
+        results.append({"Check": "End-plate flexure", "Demand": Mu, "Available": ep_cap, "Units": "kip-in",
+                        "Status": "OK" if Mu <= ep_cap else "NG", "Notes": "Screening only."})
 
     if conn == "WUF-W seismic":
         weld_len = max(float(beam.get("bf", 0) or 0), 1e-6)
         weld_nom = 2 * weld_strength_per_inch(inp["fexx"], inp["flange_weld_size"]) * weld_len
         weld_cap = strength_result(weld_nom, method, 0.75, 2.0)
-        results.append({
-            "Check": "WUF-W flange weld",
-            "Demand": flange_force,
-            "Available": weld_cap,
-            "Units": "kip",
-            "Status": "OK" if flange_force <= weld_cap else "NG",
-            "Notes": "Prequalified connection screening only."
-        })
+        results.append({"Check": "WUF-W flange weld", "Demand": flange_force, "Available": weld_cap, "Units": "kip",
+                        "Status": "OK" if flange_force <= weld_cap else "NG", "Notes": "Prequalified connection screening only."})
 
     if conn == "RBS seismic":
-        reduction = max(0.65, 1.0 - 0.25 * inp["rbs_c"])
+        reduction = max(0.65, 1 - 0.25 * inp["rbs_c"])
         zrbs = beam.get("zx", np.nan) * reduction if not pd.isna(beam.get("zx", np.nan)) else np.nan
-        mrbs = probable_moment(zrbs, fyb, inp["ry"])
+        mrbs = probable_moment(zrbs, fyb, inp["ry"]) if not pd.isna(zrbs) else np.nan
         mrbs_cap = strength_result(mrbs, method, 0.9, 1.67)
-        results.append({
-            "Check": "RBS reduced section moment",
-            "Demand": Mu,
-            "Available": mrbs_cap,
-            "Units": "kip-in",
-            "Status": "OK" if not pd.isna(mrbs_cap) and Mu <= mrbs_cap else "NG",
-            "Notes": "Simplified RBS reduction."
-        })
+        results.append({"Check": "RBS reduced section moment", "Demand": Mu, "Available": mrbs_cap, "Units": "kip-in",
+                        "Status": "OK" if not pd.isna(mrbs_cap) and Mu <= mrbs_cap else "NG", "Notes": "Simplified RBS reduction."})
 
-    panel_demand = Mu / max(float(col.get("d", 0) or 0) / 2.0 + inp["connection_ecc"], 1e-6)
+    panel_demand = Mu / max(float(col.get("d", 0) or 0) / 2 + inp["connection_ecc"], 1e-6)
     panel_nom = panel_zone_nominal(col, fyc)
     panel_cap = strength_result(panel_nom, method, 0.9, 1.5)
-    results.append({
-        "Check": "Panel zone shear",
-        "Demand": panel_demand,
-        "Available": panel_cap,
-        "Units": "kip",
-        "Status": "OK" if not pd.isna(panel_cap) and panel_demand <= panel_cap else "NG",
-        "Notes": "Approximate panel zone screening."
-    })
+    results.append({"Check": "Panel zone shear", "Demand": panel_demand, "Available": panel_cap, "Units": "kip",
+                    "Status": "OK" if not pd.isna(panel_cap) and panel_demand <= panel_cap else "NG",
+                    "Notes": "Approximate panel zone screening."})
 
     col_m = probable_moment(col.get("zx", np.nan), fyc, inp["ry"])
     beam_m = probable_moment(beam.get("zx", np.nan), fyb, inp["ry"])
     if not pd.isna(col_m) and not pd.isna(beam_m):
         ratio = 2 * col_m / max(beam_m, 1e-6)
         limit = 1.2 if seismic else 1.0
-        results.append({
-            "Check": "Strong-column / weak-beam ratio",
-            "Demand": limit,
-            "Available": ratio,
-            "Units": "-",
-            "Status": "OK" if ratio >= limit else "NG",
-            "Notes": "Frame-level concept screen."
-        })
+        results.append({"Check": "Strong-column / weak-beam ratio", "Demand": limit, "Available": ratio, "Units": "-",
+                        "Status": "OK" if ratio >= limit else "NG", "Notes": "Frame-level concept screen."})
 
-    doubler = 0.0
-    if not pd.isna(panel_cap) and panel_demand > panel_cap:
-        doubler = (panel_demand - panel_cap) / max(0.6 * fyc * float(col.get("d", 1) or 1), 1e-6)
+    doubler = 0.0 if pd.isna(panel_cap) or panel_demand <= panel_cap else (
+        panel_demand - panel_cap) / max(0.6 * fyc * float(col.get("d", 1) or 1), 1e-6)
 
     extras = {
         "flange_force_kip": flange_force,
@@ -298,6 +250,7 @@ def compute_connection(inp, beam, col):
         "doubler_plate_thickness_in": doubler,
     }
     return pd.DataFrame(results), extras
+
 
 def to_excel_bytes(checks_df, beam_row, col_row, inputs, extras):
     out = BytesIO()
@@ -309,6 +262,7 @@ def to_excel_bytes(checks_df, beam_row, col_row, inputs, extras):
         pd.DataFrame([extras]).to_excel(writer, index=False, sheet_name="Detail")
     out.seek(0)
     return out
+
 
 st.title("Steel Connection Studio")
 st.caption("STAAD + IDEA StatiCa style Streamlit app for steel beam-to-column moment connection screening and concept design")
@@ -412,29 +366,13 @@ with left:
     rbs_c = r3.number_input("RBS c ratio", value=0.20, min_value=0.05, max_value=0.5, step=0.01)
 
     inputs = {
-        "method": method,
-        "design_case": design_case,
-        "connection_family": connection_family,
-        "fy_beam": fy_beam,
-        "fy_col": fy_col,
-        "fu_beam": fu_beam,
-        "fu_col": fu_col,
-        "fexx": fexx,
-        "bolt_fu": bolt_fu,
-        "mu_kipft": mu_kipft,
-        "vu_kip": vu_kip,
-        "connection_ecc": connection_ecc,
-        "ry": ry,
-        "bolt_dia": bolt_dia,
-        "threads_excluded": threads_excluded,
-        "flange_weld_size": flange_weld_size,
-        "web_bolt_n": web_bolt_n,
-        "ep_width": ep_width,
-        "ep_thk": ep_thk,
-        "ep_tension_bolts": ep_tension_bolts,
-        "rbs_a": rbs_a,
-        "rbs_b": rbs_b,
-        "rbs_c": rbs_c,
+        "method": method, "design_case": design_case, "connection_family": connection_family,
+        "fy_beam": fy_beam, "fy_col": fy_col, "fu_beam": fu_beam, "fu_col": fu_col,
+        "fexx": fexx, "bolt_fu": bolt_fu, "mu_kipft": mu_kipft, "vu_kip": vu_kip,
+        "connection_ecc": connection_ecc, "ry": ry, "bolt_dia": bolt_dia,
+        "threads_excluded": threads_excluded, "flange_weld_size": flange_weld_size,
+        "web_bolt_n": web_bolt_n, "ep_width": ep_width, "ep_thk": ep_thk,
+        "ep_tension_bolts": ep_tension_bolts, "rbs_a": rbs_a, "rbs_b": rbs_b, "rbs_c": rbs_c,
     }
     run = st.button("Run design studio", type="primary", use_container_width=True)
 
@@ -449,14 +387,10 @@ with right:
     st.subheader("4) Connection concept")
     st.info(f"{connection_family} | {design_case} | {method}")
     st.markdown("**Workflow**")
-    st.markdown("1. Load your AISC shapes database.  
-2. Filter sections like a STAAD-style browser.  
-3. Input demands from STAAD/ETABS/SAP.  
-4. Review checks plus continuity/doubler guidance.")
+    st.markdown("1. Load your AISC shapes database.  \n2. Filter sections like a STAAD-style browser.  \n3. Input demands from STAAD/ETABS/SAP.  \n4. Review checks plus continuity/doubler guidance.")
 
 if run:
     checks_df, extras = compute_connection(inputs, beam, col)
-
     st.subheader("5) Design results")
     util = pd.to_numeric(checks_df["Demand"], errors="coerce") / pd.to_numeric(checks_df["Available"], errors="coerce")
     valid_util = util.dropna()
@@ -473,10 +407,10 @@ if run:
     view["Available"] = view["Available"].map(round_sig)
     st.dataframe(view, use_container_width=True)
 
-    st.markdown("### Governing checks")
     gov = checks_df.copy()
     gov["Utilization"] = util
     gov = gov.sort_values("Utilization", ascending=False)
+    st.markdown("### Governing checks")
     st.dataframe(gov[["Check", "Utilization", "Status", "Notes"]], use_container_width=True)
 
     c1, c2, c3 = st.columns(3)
@@ -485,12 +419,7 @@ if run:
     c3.info(f"Flange force: {round_sig(extras['flange_force_kip'], 4)} kip")
 
     out = to_excel_bytes(checks_df, beam.to_dict(), col.to_dict(), inputs, extras)
-    st.download_button(
-        "Download Excel report",
-        out,
-        "steel_connection_studio_results.xlsx",
-        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        use_container_width=True,
-    )
+    st.download_button("Download Excel report", out, "steel_connection_studio_results.xlsx",
+                       "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
 else:
     st.info("Choose the sections and connection setup, then click Run design studio.")
